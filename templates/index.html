@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Shopping Recommendations</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        #explanation-section {
+            display: none; /* Initially hidden */
+            margin-top: 30px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Smart Shopping Recommendations</h1>
+        
+        <div class="input-section">
+            <input type="text" id="customer_id" placeholder="Enter Customer ID (e.g., C1000)">
+            <button id="recommend-btn">Get Recommendations</button>
+        </div>
+        
+        <div id="loading-section" class="hidden">
+            <div class="loader"></div>
+            <p id="patience-quote"></p>
+        </div>
+        
+        <div id="results-section" class="hidden">
+            <h2>Your Personalized Recommendations</h2>
+            <div id="recommendations-list"></div>
+        </div>
+
+        <!-- Add this right after your recommendations list div -->
+        <div id="explanation-section">
+            <button id="why-recommended-btn" class="btn-analysis">
+                <i class="fas fa-question-circle"></i> Why Recommended?
+            </button>
+            <div id="explanation-loading" class="hidden">
+                <div class="loader small"></div>
+                <p class="loading-text">Analyzing your recommendations...</p>
+            </div>
+            <div id="explanation-result" class="hidden"></div>
+        </div>
+
+        
+        
+        <div id="error-section" class="hidden">
+            <p class="error-message"></p>
+        </div>
+    </div>
+
+    <script>
+
+        let currentRecommendations = []; // Store recommendations globally
+
+        document.getElementById('recommend-btn').addEventListener('click', async () => {
+            const customerId = document.getElementById('customer_id').value.trim();
+            
+            if (!customerId) {
+                alert('Please enter a customer ID');
+                return;
+            }
+            
+            // Show loading state
+            document.getElementById('loading-section').classList.remove('hidden');
+            document.getElementById('results-section').classList.add('hidden');
+            document.getElementById('error-section').classList.add('hidden');
+            
+            // Get a patience quote immediately
+            const loadingResponse = await fetch('/get_recommendations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `customer_id=${customerId}`
+            });
+            
+            const loadingData = await loadingResponse.json();
+            document.getElementById('patience-quote').textContent = loadingData.quote;
+            
+            // Generate recommendations (this will take time)
+            try {
+                const response = await fetch('/generate_recommendations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `customer_id=${customerId}`
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    currentRecommendations = data.recommendations;
+        // Show explanation button AFTER recommendations load
+        document.getElementById('explanation-section').style.display = 'block';
+                    // Display recommendations
+                    const recommendationsList = document.getElementById('recommendations-list');
+                    recommendationsList.innerHTML = '';
+                    
+                    data.recommendations.forEach((rec, index) => {
+                        const recElement = document.createElement('div');
+                        recElement.className = 'recommendation';
+                        recElement.innerHTML = `
+                            <h3>${index + 1}. ${rec.Product_ID} - ${rec.Category}</h3>
+                            <p>Price: ₹${rec.Price} | Rating: ${rec.Product_Rating}</p>
+                        `;
+                        recommendationsList.appendChild(recElement);
+                    });
+                    
+                    document.getElementById('loading-section').classList.add('hidden');
+                    document.getElementById('results-section').classList.remove('hidden');
+                } else {
+                    showError(data.message);
+                }
+            } catch (error) {
+                showError('Failed to generate recommendations');
+            }
+        });
+
+        // document.getElementById('why-recommended-btn').addEventListener('click', async () => {
+        //     const explanationSection = document.getElementById('explanation-section');
+        //     const loadingDiv = document.getElementById('explanation-loading');
+        //     const resultDiv = document.getElementById('explanation-result');
+            
+        //     // Show loading state
+        //     loadingDiv.classList.remove('hidden');
+        //     resultDiv.classList.add('hidden');
+            
+        //     try {
+        //         const response = await fetch('/generate_explanation', {
+        //             method: 'POST',
+        //             headers: {
+        //                 'Content-Type': 'application/json',
+        //             },
+        //             body: JSON.stringify({
+        //                 customer_id: document.getElementById('customer_id').value,
+        //                 recommendations: currentRecommendations // Store this when first loaded
+        //             })
+        //         });
+                
+        //         const data = await response.json();
+        //         resultDiv.innerHTML = `<h3>Recommendation Analysis</h3><p>${data.explanation}</p>`;
+        //         resultDiv.classList.remove('hidden');
+        //     } catch (error) {
+        //         resultDiv.innerHTML = `<p class="error">Could not generate explanation</p>`;
+        //         resultDiv.classList.remove('hidden');
+        //     } finally {
+        //         loadingDiv.classList.add('hidden');
+        //     }
+        // });
+
+// Why Recommended button handler
+document.getElementById('why-recommended-btn').addEventListener('click', async () => {
+        const loadingDiv = document.getElementById('explanation-loading');
+        const resultDiv = document.getElementById('explanation-result');
+        
+        loadingDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
+        
+        try {
+            const response = await fetch('/generate_explanation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer_id: document.getElementById('customer_id').value,
+                    recommendations: currentRecommendations
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            resultDiv.innerHTML = `
+    <div class="insights-container">
+        <h3><i class="fas fa-chart-line"></i> Recommendation Insights</h3>
+        <div class="insights-content">
+            ${formatExplanation(data.explanation)}
+        </div>
+    </div>
+`;
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="error-box">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    ${error.message || 'Could not generate explanation'}
+                </div>
+            `;
+        } finally {
+            loadingDiv.style.display = 'none';
+            resultDiv.style.display = 'block';
+        }
+    });
+
+        
+// Add this helper function
+function formatExplanation(text) {
+    // Convert LLM response to clean HTML
+    return text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+              .replace(/\*(.*?)\*/g, '<li>$1</li>')
+              .replace(/\n/g, '<br>');
+}
+
+        function showError(message) {
+            document.getElementById('loading-section').classList.add('hidden');
+            document.getElementById('error-section').classList.remove('hidden');
+            document.querySelector('.error-message').textContent = message;
+        }
+    </script>
+</body>
+</html>
+
+
+
+
